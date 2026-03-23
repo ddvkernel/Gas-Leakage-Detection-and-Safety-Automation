@@ -1,68 +1,114 @@
-#include <Servo.h>
+#include <SoftwareSerial.h>
 
-const int hallSensorPin = A0;   // Analog pin connected to HW-477 sensor
-const int brakePin = 9;         // PWM pin for servo motor brake
-const int thresholdRPM = 2000;  // RPM threshold to apply brake
+// Pin connections
+int mqSensor = A0;        // MQ-2 sensor connected to A0
+int motorRelay = 6;       // Relay to control motor
+int solenoidRelay = 7;    // Relay to control solenoid valve
+int ledPin = 8;           // LED for status indication
 
-Servo brakeServo;
+// GSM module pins
+int gsmRx = 10;           // Arduino RX (connected to GSM TX)
+int gsmTx = 11;           // Arduino TX (connected to GSM RX)
 
-unsigned long lastTime = 0;
-unsigned int pulseCount = 0;
-float currentRPM = 0;
+SoftwareSerial gsm(gsmRx, gsmTx);  // RX, TX
 
-const int interval = 1000; // Measurement interval in milliseconds
-bool brakeApplied = false;
+// Variables
+int gasValue = 0;              // Stores gas sensor value
+int threshold = 350;           // Set limit after testing
+unsigned long lastSmsTime = 0;
+unsigned long smsDelay = 120000; // 2 minutes gap between messages
+
+// Change to your mobile number
+char phoneNumber[] = "+91XXXXXXXXXX";
 
 void setup() {
-  Serial.begin(9600);
-  pinMode(hallSensorPin, INPUT);
+  Serial.begin(115200);
+  gsm.begin(9600);
 
-  brakeServo.attach(brakePin);
+  pinMode(mqSensor, INPUT);
+  pinMode(motorRelay, OUTPUT);
+  pinMode(solenoidRelay, OUTPUT);
+  pinMode(ledPin, OUTPUT);
 
-  attachInterrupt(digitalPinToInterrupt(hallSensorPin), countPulse, CHANGE);
+  // Default safe state
+  digitalWrite(motorRelay, HIGH);      // Motor OFF (Relay normally closed)
+  digitalWrite(solenoidRelay, HIGH);   // Solenoid Open
+  digitalWrite(ledPin, HIGH);          // LED ON (System normal)
 
-  brakeServo.write(0); // Assume 0 is brake released
+  Serial.println("Gas Leakage Detection System Starting...");
+  delay(2000);
+
+  // GSM initialization
+  sendAT("AT");
+  delay(500);
+  sendAT("AT+CMGF=1"); // Set to text mode
+  delay(500);
 }
 
 void loop() {
-  static bool lastSensorState = false;
+  gasValue = analogRead(mqSensor); // Read gas sensor
 
-  int sensorValue = analogRead(hallSensorPin);
-  bool currentSensorState = sensorValue > 512; // Threshold for detection
+  Serial.print("Gas Sensor Value: ");
+  Serial.println(gasValue);
 
-  // Edge detection for pulse counting
-  if (currentSensorState && !lastSensorState) {
-    pulseCount++;
+  if (gasValue > threshold) {
+    gasDetected();   // Run alarm functions
+  } else {
+    systemNormal();  // Stay normal
   }
-  lastSensorState = currentSensorState;
 
-  unsigned long currentTime = millis();
+  delay(1000); // Check every second
+}
 
-  if (currentTime - lastTime >= interval) {
-    // Calculate RPM
-    float revolutions = (float)pulseCount;
-    currentRPM = (revolutions / (interval / 1000.0)) * 60.0;
+void gasDetected() {
+  Serial.println("ALERT! Gas Leak Detected!");
 
-    Serial.print("RPM: ");
-    Serial.println(currentRPM);
+  // Turn ON safety devices
+  digitalWrite(motorRelay, LOW);       // Motor ON
+  digitalWrite(solenoidRelay, LOW);    // Solenoid Closed
+  digitalWrite(ledPin, LOW);           // LED OFF
 
-    // Apply or release brake based on RPM threshold
-    if (currentRPM >= thresholdRPM && !brakeApplied) {
-      brakeServo.write(180); // Apply brake
-      brakeApplied = true;
-    } 
-    else if (currentRPM < thresholdRPM && brakeApplied) {
-      brakeServo.write(0); // Release brake
-      brakeApplied = false;
-    }
-
-    // Reset pulse count for next interval
-    pulseCount = 0;
-    lastTime = currentTime;
+  // Send SMS alert (only once every few minutes)
+  if (millis() - lastSmsTime > smsDelay) {
+    sendSMS(phoneNumber, "ALERT: Gas Leak Detected! Please Check Immediately!");
+    lastSmsTime = millis();
   }
 }
 
-// Interrupt function
-void countPulse() {
-  pulseCount++;
+void systemNormal() {
+  Serial.println("System Normal - No Gas Detected.");
+
+  // Keep devices OFF / Open
+  digitalWrite(motorRelay, HIGH);     // Motor OFF
+  digitalWrite(solenoidRelay, HIGH);  // Solenoid Open
+  digitalWrite(ledPin, HIGH);         // LED ON
+}
+
+void sendAT(const char *cmd) {
+  gsm.println(cmd);
+  delay(500);
+
+  while (gsm.available()) {
+    Serial.write(gsm.read());
+  }
+}
+
+void sendSMS(const char *number, const char *msg) {
+  Serial.println("Sending SMS...");
+
+  gsm.println("AT+CMGF=1"); // Text mode
+  delay(300);
+
+  gsm.print("AT+CMGS=\"");
+  gsm.print(number);
+  gsm.println("\"");
+  delay(300);
+
+  gsm.print(msg);
+  delay(300);
+
+  gsm.write(26); // CTRL+Z to send SMS
+  delay(3000);
+
+  Serial.println("SMS Sent Successfully!");
 }
