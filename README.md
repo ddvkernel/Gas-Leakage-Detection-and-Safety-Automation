@@ -15,10 +15,11 @@ Gas leakage can lead to fire hazards, explosions, and serious health risks in ho
 1. Connect MQ-2 gas sensor to Arduino (A0 pin)
 2. Connect relay module, motor, solenoid valve, and LED as per circuit
 3. Connect GSM module (SIM800L) using TX/RX pins
-4. Update phone number in the code
-5. Upload the code using Arduino IDE
-6. Power the system
-7. Monitor Serial output and SMS alerts
+4. Update phone number in the 22nd line of the code
+5. Power the system
+6. Connect the Arduino Board to the laptop
+7. Upload the code using the upload button in Arduino IDE
+8. Monitor Serial output and SMS alerts
 
 
 ## Documented Report
